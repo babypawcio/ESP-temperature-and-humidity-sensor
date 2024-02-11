@@ -4,3 +4,5 @@ Air quality sensor: Plantower PMS7003
 Screen: LCD2004
 4x AA Battery holder
 4x AA rechargable batteries
+
+![image](sensor.jpg)
