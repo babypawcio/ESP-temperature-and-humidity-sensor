@@ -1,4 +1,4 @@
-Board: ESP8266 + NodeMCU v3
+Board: ESP8266 + NodeMCU v3 </br>
 Humidity and temperature sensor: DHT11
 Air quality sensor: Plantower PMS7003
 Screen: LCD2004
