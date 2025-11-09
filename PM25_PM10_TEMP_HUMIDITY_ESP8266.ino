@@ -1,7 +1,11 @@
+                                                                                                                              // Author: Pawel Kupiec, University of Gdansk
+
 #include <SoftwareSerial.h>                                                                                                   // Serial display library for PMS7003 data
 #include <LiquidCrystal_I2C.h>                                                                                                // 20 x 4 LCD display library
 #include "PMS.h"                                                                                                              // PMS7003 PM2.5 & PM10 laser sensor library
 #include "DHT.h"                                                                                                              // DHT Temp & Humidity sensor libraty
+#include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h>
 
 #define PMS7003_TX          D5                                                                                                // GPIO12
 #define PMS7003_RX          D6                                                                                                // GPIO14
@@ -12,8 +16,32 @@
 #define SENSOR D3                                                                                                             // DHT Sensor PIN
 #define MODEL DHT11                                                                                                           // DHT Sensor model (DHT11)
 
-const static int pause = 10000;                                                                                               // Instructions delay
+const static int pause = 600000;                                                                                              // Instructions delay (miliseconds)
+                                                                                                                              // 1 sec = 1 000 ms
+                                                                                                                              // 1 min = 60 000 ms
+                                                                                                                              // 10 min = 600 000 ms
+                                                                                                                              // 30 min = 1 800 000 ms
+                                                                                                                              // 1 hour = 3 600 000 ms
+
 int PM25, PM10;                                                                                                               // Values for PM2.5 & PM10 readings
+
+
+const char* ssid = "Orange_Swiatlowod_A7A0";                                                                                  // WIFI Connection
+const char* password = "g2Zw524L4DaeWHPYar";
+
+// const char* ssid = "iPhone (Paweł)";                                                                                       // Hotspot currently not working, dunno why
+// const char* password = "00000000";
+
+const char* host = "script.google.com";                                                                                       // HOST & HTTPS Port
+const int httpsPort = 443;
+
+
+WiFiClientSecure client;                                                                                                      // WIFI Secure Client Creator
+
+
+String GAS_ID = "AKfycbwNRitu3Uvh_WGptCPrvSQZY2--Qf69BJnSq15xsCWW1nAIWUgG57SS6wvubazKYpW9";                                   // Google Script Acces ID
+
+void send_to_spreadsheet(float temperature, float humidity, float PM25, float PM10);                                          // Function which is sending data to a Google Sheet
 
 DHT dht(SENSOR, MODEL);                                                                                                       // Initializing/Constructing DHT sensor object
 
@@ -35,7 +63,28 @@ void setup()                                                                    
   _serial.begin(9600);                                                                                                        // "Serial monitor" settings for communicating with a PMS7003 sensor
   dht.begin();                                                                                                                // Initializing a DHT sensor
 
-  delay(pause);
+  delay(10000);
+
+  WiFi.begin(ssid, password);                                                                                                 // WIFI Connection to a router / hotspot
+
+                                                                                                                              // if not connected - loop a "." print
+/*                                                                                                                            // instead, values are just not printing into spreadsheet, "connection failed" text showing in the monitor
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(200);
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(200);
+
+  }
+*/
+  
+  digitalWrite(LED_BUILTIN, HIGH);                                                                                            // If WIFI connection is succesfull, turn of LED and write: 
+  Serial.println("");
+  Serial.print("Successfully connected to : ");
+  Serial.println(ssid);
+  Serial.println();
+  client.setInsecure();
 
   lcd.clear();                                                                                                                // Clearing screen before showing values from the loop function
 }
@@ -43,13 +92,18 @@ void setup()                                                                    
 void loop()
 {
   float humidity = dht.readHumidity();                                                                                        // Reading humidity from the DHT sensor
-  float temperature = dht.readTemperature();                                                                                  // Reading temperature from the DHT sensor
+  float temperature = dht.readTemperature() + 0.5;                                                                            // Reading temperature from the DHT sensor
 
   readSensor();                                                                                                               // Working/Correct PMS function
-  Serial.print(F("\nPM2.5 : "));
+  Serial.print(F("\nPM_2.5 (μg / m³): "));
   Serial.println(PM25);
-  Serial.print(F("\nPM10 : "));
+  Serial.print(F("\nPM_10 (μg / m³) : "));
   Serial.println(PM10);
+  Serial.print(F("\nTemperature (°C) : "));
+  Serial.println(temperature);
+  Serial.print(F("\nHumidity (%) : "));
+  Serial.println(humidity);
+  Serial.print(F("\n----------------------------- : "));
 
   lcd.setCursor(0, 0);
   lcd.print("PM 2.5 : " + String(PM25) + " (ug/m3)");                                                                         // Printing PMx values on the display
@@ -75,6 +129,8 @@ void loop()
     else {
       lcd.print("Wilgotnosc  : " + String(humidity) + "%");                                                                    // If the humidity variable value is right
     }
+
+  send_to_spreadsheet(temperature, humidity, PM25, PM10);                                                                      // Sending Data to a Google Spreadsheet
 
   delay(pause);                                                                                                                // Pause for 10 seconds before next "iteration"
 }
@@ -113,4 +169,44 @@ void readSensor() {                                                             
     PM25 = makeWord(pms[12],pms[13]);                                                                                           // PM25 value is 16 bit word created from 2 bit words (from value under pms[12] and another one from pms[13])
     PM10 = makeWord(pms[14],pms[15]);                                                                                           // PM10 value is 16 bit word created from 2 bit words (from value under pms[14] and another one from pms[15])
   }		
+}
+
+void send_to_spreadsheet(float temperature, float humidity, float PM25, float PM10) {
+
+                                                                                                                                // Connecting to Google Host
+  if (!client.connect(host, httpsPort)) {
+    Serial.println("connection failed");
+    return;
+  }
+
+
+  String str_temperature =  String(temperature);                                                                                // Writing characters to Google Spreadsheets
+  String str_humidity =  String(humidity);
+  String str_PM25 = String(PM25);
+  String str_PM10 = String(PM10);
+                                                                                                                                // &temmperature, &humidity, etc. - writing values to a google spreadsheet cells
+  
+  String url = "/macros/s/" + GAS_ID + "/exec?temperature=" + str_temperature + "&humidity=" + str_humidity + "&PM25=" + str_PM25 + "&PM10=" + str_PM10;
+
+                                                                                                                                // Sending GET Request (Method)
+  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+         "Host: " + host + "\r\n" +
+         "User-Agent: BuildFailureDetectorESP8266\r\n" +
+         "Connection: close\r\n\r\n");
+
+                                                                                                                                // Checking if the data wes sent succesfully
+  while (client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r") {
+      Serial.println("headers received");
+      break;
+    }
+  }
+
+  String line = client.readStringUntil('\n');
+  if (line.startsWith("{\"state\":\"success\"")) {
+    Serial.println("esp8266/Arduino CI successfull!");
+  } else {
+  // Serial.println("esp8266/Arduino CI has failed");
+  }
 }
